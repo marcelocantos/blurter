@@ -33,7 +33,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+          # A real release checks out its tag. A workflow_dispatch dry run
+          # checks out the ref it was dispatched on — NOT inputs.tag, which by
+          # definition does not exist yet during a pre-tag rehearsal. Using the
+          # input here made every dry run fail in checkout, which defeats the
+          # point of rehearsing before the tag is cut.
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - uses: actions/setup-go@v6
         with:
