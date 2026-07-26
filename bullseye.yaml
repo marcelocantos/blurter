@@ -14,7 +14,7 @@ schema_version: 5
 targets:
   T1:
     name: blurter delivers spooled notifications reliably, and nothing that submits an event holds a credential or blocks on the network
-    status: converging
+    status: achieved
     value: 5.0
     cost: 3.0
     acceptance:
@@ -33,9 +33,10 @@ targets:
       The spool is the load-bearing decision: it makes submission durable, instant and credential-free, and turns delivery into at-least-once rather than at-most-once. Every other property here follows from it.
     origin: bullseye_init
     discovered: 2026-07-26
+    achieved: 2026-07-27
   T2:
     name: ytt notifies exclusively through blurter, with no notification code of its own
-    status: identified
+    status: achieved
     value: 0.0
     cost: 0.0
     acceptance:
@@ -51,3 +52,4 @@ targets:
     - T1
     origin: manual
     discovered: 2026-07-26
+    achieved: 2026-07-27
