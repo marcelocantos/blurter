@@ -45,6 +45,7 @@ Usage:
   blurter drain            deliver everything spooled now, then exit
   blurter status           show spool depth, per-app state, and config paths
   blurter service install  write a launchd agent for the current user
+  blurter mcp              serve MCP over stdio (for agent sessions)
   blurter --version | --help | --help-agent
 
 Severity is one of problem, ok, info.
@@ -96,6 +97,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return cmdStatus(args[1:], stdout)
 	case "service":
 		return cmdService(args[1:], stdout)
+	case "mcp":
+		return cmdMCP(args[1:], os.Stdin, stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command %q (try --help)", args[0])
 	}

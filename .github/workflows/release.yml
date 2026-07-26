@@ -1,0 +1,113 @@
+name: Release
+
+# Triggered by a published release. This workflow only builds and uploads
+# artifacts — it never creates tags or releases. The release already exists,
+# created by `gh release create`.
+on:
+  release:
+    types: [published]
+  # workflow_dispatch allows a dry run before tagging: the build and package
+  # steps run, but the upload step is skipped without a release to attach to.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (dry run; nothing is uploaded)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: arm64
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+
+      # blurter is pure Go with CGO disabled, so every target cross-compiles
+      # from one runner. No native ARM runners or cross-compilers needed.
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          tag="${{ github.event.release.tag_name || inputs.tag }}"
+          version="${tag#v}"
+          : "${version:=dev}"
+          go build -trimpath -ldflags "-s -w -X main.version=$version" -o blurter .
+          ./blurter --version || true   # a cross-built binary may not run here
+
+      - name: Package
+        id: package
+        run: |
+          tag="${{ github.event.release.tag_name || inputs.tag }}"
+          version="${tag#v}"
+          : "${version:=dev}"
+          # homebrew-releaser strips the leading v from the tag when looking
+          # for assets, so the asset name must carry the bare version.
+          name="blurter-${version}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
+          tar czf "$name" blurter README.md LICENSE agents-guide.md
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "${{ steps.package.outputs.name }}" --clobber
+
+  homebrew:
+    name: Update Homebrew tap
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: Justintime50/homebrew-releaser@v3
+        with:
+          homebrew_owner: marcelocantos
+          homebrew_tap: homebrew-tap
+          github_token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          formula_folder: Formula
+          version: ${{ github.event.release.tag_name }}
+          install: 'bin.install "blurter" => "blurter"'
+          target_darwin_arm64: true
+          target_linux_amd64: true
+          target_linux_arm64: true
+          test: 'system bin/"blurter", "--version"'
+          skip_checksum: true
+          update_readme_table: true
+          # The service block must live here, not be hand-added to the tap:
+          # homebrew-releaser regenerates the formula on every release, so an
+          # edit made directly in the tap would be silently clobbered.
+          #
+          # terminal-notifier is macOS-only and gives the desktop notification
+          # a working click action; without it the banner sink falls back to
+          # osascript, whose notification has no click handler.
+          formula_includes: |
+            on_macos do
+              depends_on "terminal-notifier"
+            end
+
+            service do
+              run [opt_bin/"blurter", "daemon"]
+              keep_alive true
+              log_path var/"log/blurter.log"
+              error_log_path var/"log/blurter.log"
+              working_dir HOMEBREW_PREFIX
+              environment_variables PATH: "#{HOMEBREW_PREFIX}/bin:#{HOMEBREW_PREFIX}/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
+            end

@@ -115,6 +115,21 @@ silent no-ops.
 The token file is refused unless its mode is `600` or stricter. That is a loud
 failure on purpose.
 
+## Using blurter as an MCP server
+
+If blurter is registered as an MCP server (`claude mcp add --scope user blurter
+-- blurter mcp`), prefer the tools over shelling out:
+
+- **`blurter_send`** — raise a notification. Same asynchrony as the CLI: the
+  reply means spooled, not delivered.
+- **`blurter_status`** — spool depth, sink readiness, per-app status.
+- **`blurter_recent`** — audit entries, to answer "did that actually go out?"
+
+`blurter_send` defaults `app` to `adhoc` and `severity` to `info`, which is
+right for "tell me when this finishes". Use `problem` only for something
+actually wrong, or you erode the meaning of the severity that interrupts a
+human.
+
 ## Running the daemon
 
 ```sh
