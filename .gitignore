@@ -1,0 +1,14 @@
+# Build artifacts.
+/blurter
+/dist/
+
+# Local credentials — never commit. blurter reads the Slack token from the
+# config dir at runtime; nothing credential-shaped belongs in the repo.
+slack-token
+*.token
+.env
+
+# IDE and OS noise.
+.vscode/
+.idea/
+.DS_Store
