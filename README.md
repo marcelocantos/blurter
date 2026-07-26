@@ -33,10 +33,14 @@ same things wrong. blurter exists so that happens once, centrally:
 
 ```sh
 brew install marcelocantos/tap/blurter
-blurter service install     # generates and loads a launchd agent
+brew services start blurter
 ```
 
-Or from source: `go build -o blurter .`
+The formula ships a service definition, so `brew services` manages the daemon.
+Without Homebrew, `blurter service install` generates and loads an equivalent
+launchd agent, or run `blurter daemon` under `systemd --user` on Linux.
+
+From source: `go build -o blurter .`
 
 ## Configure
 
@@ -106,6 +110,23 @@ you when something recovers.
 
 > `blurter send` exiting 0 means **spooled**, not **delivered**. Delivery is
 > asynchronous by design. Use `blurter status` or the audit log to confirm.
+
+## Ad-hoc messages from an agent session
+
+blurter is an MCP server, so an agent can raise a notification directly —
+useful for "tell me when this finishes" on a long task:
+
+```sh
+claude mcp add --scope user blurter -- blurter mcp
+```
+
+Tools: `blurter_send` (spool an event), `blurter_status` (health), and
+`blurter_recent` (what was delivered or suppressed, and why).
+
+Note what the MCP surface deliberately does **not** do: deliver. The tools spool
+and read, exactly like the CLI. Delivery stays in the daemon, with no LLM in
+that path — an agent asking for a message is a submitter like any other app, and
+gets the same durability and policy.
 
 ## Inspect
 
