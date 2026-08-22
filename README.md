@@ -37,8 +37,11 @@ brew services start blurter
 ```
 
 The formula ships a service definition, so `brew services` manages the daemon.
-Without Homebrew, `blurter service install` generates and loads an equivalent
-launchd agent, or run `blurter daemon` under `systemd --user` on Linux.
+Homebrew users should use that path, not `blurter service install`.
+
+Without Homebrew, `blurter service install` generates and loads a launchd
+agent (different log path, PATH, and a resolved binary path — not the same
+plist as the formula), or run `blurter daemon` under `systemd --user` on Linux.
 
 From source: `go build -o blurter .`
 
@@ -62,10 +65,14 @@ apps:
   ytt:
     renotify_after: 24h
   chatty-app:
-    min_severity: problem
+    min_severity: problem     # problems only: also drops ok, so no RECOVERED
   under-development:
     mute: true
 ```
+
+`min_severity` is a rank floor (`info` < `ok` < `problem`) applied **before**
+recovery. `min_severity: problem` therefore never sends `RECOVERED` for that
+app. See [STABILITY.md](STABILITY.md).
 
 For Slack, create an app with the `chat:write` and `im:write` bot scopes, install
 it to your workspace, and store the `xoxb-…` token:
@@ -102,14 +109,15 @@ printf '%s\n' "${issues[@]}" | blurter send --app myapp --severity problem \
 | Severity  | Meaning | Delivery |
 |-----------|---------|----------|
 | `problem` | Something is wrong. | Delivered, subject to dedup. |
-| `ok`      | Healthy. | **Silent**, unless closing out a reported problem — then one `RECOVERED` notice. |
+| `ok`      | Healthy. | **Silent**, unless closing out a reported problem *and* `ok` meets `min_severity` — then one `RECOVERED` notice. |
 | `info`    | Notable non-failure. | Delivered if `min_severity` allows. |
 
-Report `ok` on every healthy run: it is silent, and it is what lets blurter tell
-you when something recovers.
+Report `ok` on every healthy run under the default `min_severity: info`: it is
+silent, and it is what lets blurter send `RECOVERED`. Combined with
+`min_severity: problem`, those `ok` events are dropped as below the floor.
 
 > `blurter send` exiting 0 means **spooled**, not **delivered**. Delivery is
-> asynchronous by design. Use `blurter status` or the audit log to confirm.
+> asynchronous by design. Confirm in the audit log or with MCP `blurter_recent`.
 
 ## Ad-hoc messages from an agent session
 
@@ -131,14 +139,16 @@ gets the same durability and policy.
 ## Inspect
 
 ```sh
-blurter status     # spool depth, per-app state, sink readiness
+blurter status     # config/state/spool paths, spool depth, sink readiness, per-app state
 blurter drain      # deliver what's spooled now, then exit
 ```
 
 Every decision — including each suppression and its reason — is appended to
 `~/.local/state/blurter/audit.jsonl`, so "blurter ate my notification" is always
-answerable. Undeliverable events are moved to `parked/` rather than deleted:
-blurter's own failure must never destroy an alert.
+answerable. Undeliverable events are moved to `$XDG_STATE_HOME/blurter/parked/`
+rather than deleted: blurter's own failure must never destroy an alert. CLI
+`status` does not list `parked/`; MCP `blurter_status` reports the count when it
+is non-empty. The audit log records `parked:` outcomes.
 
 ## Design notes
 
@@ -156,6 +166,9 @@ what delivers them.
 **Transient versus permanent failures are distinguished.** No network or a Slack
 5xx is retried with exponential backoff; `invalid_auth` or `missing_scope` is
 not, because retrying a misconfiguration forever buries real alerts.
+
+The shipped policy contract (severity rank, `min_severity` versus recovery,
+retry clock, CLI vs MCP status) is in [STABILITY.md](STABILITY.md).
 
 If you use an agentic coding tool, point it at
 [`agents-guide.md`](agents-guide.md), or run `blurter --help-agent`.

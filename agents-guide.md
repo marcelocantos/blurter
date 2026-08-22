@@ -45,12 +45,17 @@ printf '%s\n' "${issues[@]}" | blurter send --app myapp --severity problem \
 | Severity  | Meaning | Delivery |
 |-----------|---------|----------|
 | `problem` | Something is wrong; interrupt the human. | Delivered, subject to dedup. |
-| `ok`      | Healthy. | **Silent**, unless it closes out a problem blurter previously reported — then one `RECOVERED` notice. |
+| `ok`      | Healthy. | **Silent**, unless it closes out a previously reported problem *and* `ok` meets `min_severity` — then one `RECOVERED` notice. |
 | `info`    | Notable non-failure. | Delivered only if the app's `min_severity` allows it. |
 
-Report `ok` on every healthy run. It costs nothing (it's silent) and it is what
-lets blurter tell you when something recovers. An app that only reports failures
-can never produce a recovery notice.
+Rank is `info` < `ok` < `problem`. `min_severity` is a floor applied **before**
+the recovery branch. `min_severity: problem` therefore drops `ok` as "below
+configured minimum" and that app never sends `RECOVERED`.
+
+Report `ok` on every healthy run when `min_severity` is `info` (the default). It
+is silent, and it is what lets blurter tell you when something recovers. An app
+that only reports failures can never produce a recovery notice. An app whose
+config is `min_severity: problem` cannot produce one either.
 
 ### `--key`
 
@@ -71,10 +76,16 @@ of this, and should not try:
 
 - **Dedup.** An identical problem is not re-sent until `renotify_after`
   (default 7 days), then arrives prefixed `STILL BROKEN (Nd)`.
-- **Recovery.** The first `ok` after a `problem` sends one `RECOVERED` notice.
+- **Recovery.** The first `ok` after a delivered `problem` sends one
+  `RECOVERED` notice — only if `ok` is at or above `min_severity`. Default
+  `min_severity: info` lets this fire; `min_severity: problem` does not.
 - **Steady-state silence.** Repeated `ok` reports are silent.
 - **Per-app isolation.** State is per app, so one app's alerts never suppress
   another's, and one app's recovery never closes another's problem.
+- **Suppressed events still change last status.** A dropped `info` (or `ok`)
+  overwrites the app's remembered severity without touching the re-notify
+  timestamp. After a problem, that can clear the outstanding-problem bit so a
+  later `ok` has nothing to recover.
 
 Every decision — including every suppression, with its reason — is recorded in
 `$XDG_STATE_HOME/blurter/audit.jsonl`, so "blurter ate my notification" is
@@ -101,7 +112,7 @@ apps:
   myapp:
     renotify_after: 24h       # nag sooner about this one
   chatty-app:
-    min_severity: problem     # drop its info events
+    min_severity: problem     # problems only: also drops ok, so no RECOVERED
   under-development:
     mute: true                # silence entirely without touching the app
 ```
@@ -122,7 +133,9 @@ If blurter is registered as an MCP server (`claude mcp add --scope user blurter
 
 - **`blurter_send`** — raise a notification. Same asynchrony as the CLI: the
   reply means spooled, not delivered.
-- **`blurter_status`** — spool depth, sink readiness, per-app status.
+- **`blurter_status`** — spool depth, sink readiness, per-app status, and
+  parked count when `parked/` is non-empty. CLI `blurter status` reports paths
+  and spool errors but does **not** mention `parked/`.
 - **`blurter_recent`** — audit entries, to answer "did that actually go out?"
 
 `blurter_send` defaults `app` to `adhoc` and `severity` to `info`, which is
@@ -133,13 +146,15 @@ human.
 ## Running the daemon
 
 ```sh
-blurter service install     # generates and loads a launchd agent
-blurter status              # spool depth, per-app state, sink readiness
+blurter service install     # generates and loads a launchd agent (from-source)
+blurter status              # paths, spool depth, sink readiness, per-app state
 blurter drain               # deliver what's spooled now, then exit
 ```
 
 On Linux, run `blurter daemon` under `systemd --user`; `service install` is
-launchd-only.
+launchd-only. Homebrew users should use `brew services`, not `service install`:
+the generated plist is not the formula's (different log path, PATH, and it
+records `EvalSymlinks` of the binary, which on Homebrew is a Cellar path).
 
 `blurter drain` is useful when there is no daemon, and in tests. It is not a
 substitute for the daemon: without one, spooled events wait until something
@@ -147,8 +162,9 @@ calls `drain`.
 
 ## Gotchas
 
-- **`send` exiting 0 is not delivery.** See above. Check `blurter status` or the
-  audit log for delivery.
+- **`send` exiting 0 is not delivery.** See above. Confirm in the audit log or
+  with `blurter_recent`. `blurter status` is sink/spool health, not a per-event
+  receipt.
 - **A missing config file is not an error.** blurter falls back to the banner
   sink, because dropping every event would be worse than notifying locally.
   Check `blurter status` to confirm Slack is actually wired up.
@@ -156,8 +172,9 @@ calls `drain`.
   `problem`.
 - **Undeliverable events are parked, not deleted** (in
   `$XDG_STATE_HOME/blurter/parked/`) so blurter's own failure never destroys an
-  alert. A growing `parked/` means a permanent misconfiguration — check
-  `blurter status` and the audit log.
+  alert. A growing `parked/` means a permanent misconfiguration. Look in that
+  directory, the audit log (`parked:` lines), or MCP `blurter_status`. CLI
+  `blurter status` does not report parked count.
 - **Never put an LLM in the delivery path.** blurter is deliberately a plain
   HTTPS call. Measured on 2026-07-26, a headless `claude` had its Slack
   connector available in 1 of 6 invocations, which disqualifies it for anything
