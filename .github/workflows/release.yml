@@ -104,9 +104,7 @@ jobs:
           # a working click action; without it the banner sink falls back to
           # osascript, whose notification has no click handler.
           formula_includes: |
-            on_macos do
-              depends_on "terminal-notifier"
-            end
+            depends_on "terminal-notifier" if OS.mac?
 
             service do
               run [opt_bin/"blurter", "daemon"]
@@ -114,5 +112,5 @@ jobs:
               log_path var/"log/blurter.log"
               error_log_path var/"log/blurter.log"
               working_dir HOMEBREW_PREFIX
-              environment_variables PATH: "#{HOMEBREW_PREFIX}/bin:#{HOMEBREW_PREFIX}/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
+              environment_variables PATH: std_service_path_env
             end
