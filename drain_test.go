@@ -358,3 +358,43 @@ func TestSlackTokenAcceptsTightPermissions(t *testing.T) {
 		t.Errorf("token = %q, want it trimmed", token)
 	}
 }
+
+// An event that has been sitting in the spool through an outage must still get
+// its full retry budget. Keying backoff off CreatedAt means an aged event never
+// defers, so maxAttempts is burned in a handful of drain ticks and a real alert
+// is parked instead of retried — the exact loss this project exists to prevent.
+func TestAgedEventStillHonoursBackoff(t *testing.T) {
+	// Matches the daemon's default drain cadence (main.go's --interval default).
+	const drainInterval = 5 * time.Second
+	const spoolAge = 2 * time.Hour
+
+	sink := &fakeSink{name: "fake", failWith: fmt.Errorf("no route to host"), retryable: true}
+	d := newTestDrainer(t, sink)
+
+	clock := time.Now()
+	d.Now = func() time.Time { return clock }
+	spool(t, d, &Event{
+		App:       "ytt",
+		Severity:  SeverityProblem,
+		Subject:   "broken",
+		Body:      "detail",
+		CreatedAt: clock.Add(-spoolAge),
+	})
+
+	for i := 0; i < maxAttempts; i++ {
+		d.DrainOnce(context.Background())
+		clock = clock.Add(drainInterval)
+	}
+
+	if n := spoolDepth(t, d); n != 1 {
+		t.Errorf("spool depth = %d after %v of drains, want the event retained for retry",
+			n, time.Duration(maxAttempts)*drainInterval)
+	}
+	parked, err := os.ReadDir(filepath.Join(d.Paths.State, "parked"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if len(parked) != 0 {
+		t.Errorf("parked %d events; backoff must throttle retries by last attempt, not creation time", len(parked))
+	}
+}

@@ -28,10 +28,19 @@ type Drainer struct {
 	// Log receives operational messages.
 	Log io.Writer
 
-	// attempts counts failed delivery attempts per event ID, so backoff does
+	// attempts tracks failed delivery attempts per event ID, so backoff does
 	// not require rewriting the spooled event. Lost on restart, which is
 	// deliberate: a restart is a reasonable moment to retry immediately.
-	attempts map[string]int
+	attempts map[string]attemptRecord
+}
+
+// attemptRecord is what backoff is measured from. The clock has to be the last
+// attempt, not the event's CreatedAt: an event that aged in the spool during an
+// outage would otherwise never defer, burning maxAttempts in a few drain ticks
+// and parking an alert that was only ever waiting for the network.
+type attemptRecord struct {
+	n           int
+	lastAttempt time.Time
 }
 
 func (d *Drainer) now() time.Time {
@@ -71,7 +80,7 @@ func backoff(n int) time.Duration {
 // delivered and the number left for a later attempt.
 func (d *Drainer) DrainOnce(ctx context.Context) (delivered, deferred int) {
 	if d.attempts == nil {
-		d.attempts = map[string]int{}
+		d.attempts = map[string]attemptRecord{}
 	}
 
 	events, errs := readSpool(d.Paths.Spool)
@@ -89,8 +98,8 @@ func (d *Drainer) DrainOnce(ctx context.Context) (delivered, deferred int) {
 		e := se.Event
 
 		// Respect backoff for events that have already failed.
-		if n := d.attempts[e.ID]; n > 0 {
-			if d.now().Sub(e.CreatedAt) < backoff(n-1) {
+		if rec := d.attempts[e.ID]; rec.n > 0 {
+			if d.now().Sub(rec.lastAttempt) < backoff(rec.n-1) {
 				deferred++
 				continue
 			}
@@ -132,18 +141,21 @@ func (d *Drainer) DrainOnce(ctx context.Context) (delivered, deferred int) {
 			continue
 		}
 
-		d.attempts[e.ID]++
-		if !retryable || d.attempts[e.ID] >= maxAttempts {
+		rec := d.attempts[e.ID]
+		rec.n++
+		rec.lastAttempt = d.now()
+		d.attempts[e.ID] = rec
+		if !retryable || rec.n >= maxAttempts {
 			reason := "permanent failure"
 			if retryable {
-				reason = fmt.Sprintf("gave up after %d attempts", d.attempts[e.ID])
+				reason = fmt.Sprintf("gave up after %d attempts", rec.n)
 			}
 			d.logf("PARKED %s/%s (%s): %v", e.App, e.Severity, reason, sinkErrs)
 			d.audit(e, decision, "parked: "+reason, sinkErrs)
 			d.park(se.Path)
 			continue
 		}
-		d.logf("deferred %s/%s (attempt %d): %v", e.App, e.Severity, d.attempts[e.ID], sinkErrs)
+		d.logf("deferred %s/%s (attempt %d): %v", e.App, e.Severity, rec.n, sinkErrs)
 		deferred++
 	}
 
