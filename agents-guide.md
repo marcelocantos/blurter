@@ -6,8 +6,10 @@ owns the Slack credential, the delivery policy, and the sinks.
 ## The one thing to understand
 
 `blurter send` does **not** deliver. It writes a JSON event into a spool
-directory and exits, typically in a millisecond. A separate daemon (`blurterd`)
-drains the spool and delivers with retry.
+directory and exits, typically in a millisecond. A separate process — `blurter
+daemon`, the same binary — drains the spool and delivers with retry. (There is
+no `blurterd` binary; that name survives only as the launchd label
+`com.marcelocantos.blurterd` and its log filename.)
 
 This asynchrony is the entire design, for three reasons:
 
@@ -32,6 +34,8 @@ blurter send --app myapp --severity problem \
   --body "3 of 40 volumes did not complete; see the log" \
   --link ~/.local/var/log/myapp.log
 ```
+
+`send` prints the spooled event's path; `--quiet` suppresses that.
 
 Body from stdin, which is usually what a script wants:
 
@@ -104,7 +108,14 @@ apps:
     min_severity: problem     # drop its info events
   under-development:
     mute: true                # silence entirely without touching the app
+  noisy-batch:
+    destination: channel      # dm (default) | channel | an explicit ID
 ```
+
+Any `apps.<name>` key is also valid under `default`. `destination` resolves
+three ways: `dm` or unset uses `slack.dm`, `channel` uses `slack.channel`, and
+anything else is taken literally as a channel or member ID.
+`renotify_after: 0s` suppresses an unchanged problem indefinitely.
 
 Config lives in `$XDG_CONFIG_HOME`, **never** beside the installed binary. A
 package-managed prefix (`/opt/homebrew/Cellar/...`) is replaced wholesale on
@@ -121,9 +132,14 @@ If blurter is registered as an MCP server (`claude mcp add --scope user blurter
 -- blurter mcp`), prefer the tools over shelling out:
 
 - **`blurter_send`** — raise a notification. Same asynchrony as the CLI: the
-  reply means spooled, not delivered.
-- **`blurter_status`** — spool depth, sink readiness, per-app status.
-- **`blurter_recent`** — audit entries, to answer "did that actually go out?"
+  reply means spooled, not delivered. Parameters: `subject` (required), `body`,
+  `severity` (`problem`|`ok`|`info`), `app`, `key`, `link`.
+- **`blurter_status`** — spool depth, sink readiness, per-app status. No
+  parameters.
+- **`blurter_recent`** — audit entries, to answer "did that actually go out?".
+  Parameters: `limit` (default 20), `app`.
+
+That is the whole surface: three tools, no others.
 
 `blurter_send` defaults `app` to `adhoc` and `severity` to `info`, which is
 right for "tell me when this finishes". Use `problem` only for something
@@ -134,9 +150,16 @@ human.
 
 ```sh
 blurter service install     # generates and loads a launchd agent
+blurter service install --dry-run   # print the plist instead of writing it
+blurter service path        # where the plist lives
+blurter service uninstall   # unload and remove it
+blurter daemon --interval 5s        # run in the foreground (default 5s)
 blurter status              # spool depth, per-app state, sink readiness
 blurter drain               # deliver what's spooled now, then exit
 ```
+
+The banner sink shells out to `terminal-notifier`, falling back to `osascript`;
+with neither present the banner sink fails and only Slack delivers.
 
 On Linux, run `blurter daemon` under `systemd --user`; `service install` is
 launchd-only.
@@ -156,8 +179,9 @@ calls `drain`.
   `problem`.
 - **Undeliverable events are parked, not deleted** (in
   `$XDG_STATE_HOME/blurter/parked/`) so blurter's own failure never destroys an
-  alert. A growing `parked/` means a permanent misconfiguration — check
-  `blurter status` and the audit log.
+  alert. An event is parked on the first permanent failure (`invalid_auth`,
+  `missing_scope`) or after 12 transient attempts, so a growing `parked/` most
+  often means a misconfiguration — check `blurter status` and the audit log.
 - **Never put an LLM in the delivery path.** blurter is deliberately a plain
   HTTPS call. Measured on 2026-07-26, a headless `claude` had its Slack
   connector available in 1 of 6 invocations, which disqualifies it for anything

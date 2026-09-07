@@ -44,7 +44,8 @@ Usage:
   blurter daemon [--interval DURATION]
   blurter drain            deliver everything spooled now, then exit
   blurter status           show spool depth, per-app state, and config paths
-  blurter service install  write a launchd agent for the current user
+  blurter service install|uninstall|path [--dry-run]
+                           manage the launchd agent (macOS only)
   blurter mcp              serve MCP over stdio (for agent sessions)
   blurter --version | --help | --help-agent
 
@@ -58,6 +59,7 @@ Severity is one of problem, ok, info.
     --key TEXT          dedup key override, when the text varies but the
                         underlying problem does not
     --link PATH|URL     what the notification's click action opens
+    --quiet             do not print the spooled event's path
 
 Exit status is 0 when the event was spooled, not when it was delivered:
 delivery is asynchronous by design, so a submitting app is never blocked or
