@@ -62,7 +62,7 @@ apps:
   ytt:
     renotify_after: 24h
   chatty-app:
-    min_severity: problem
+    min_severity: problem     # drop info chatter; never suppresses recovery
   under-development:
     mute: true
 ```

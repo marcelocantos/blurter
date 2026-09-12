@@ -398,3 +398,35 @@ func TestAgedEventStillHonoursBackoff(t *testing.T) {
 		t.Errorf("parked %d events; backoff must throttle retries by last attempt, not creation time", len(parked))
 	}
 }
+
+// min_severity: problem is the documented way to quiet a chatty app. It must
+// drop info chatter without clearing an outstanding problem, or the later ok
+// is silent and the human never sees RECOVERED.
+func TestDrainMinSeverityDoesNotClearOutstandingProblem(t *testing.T) {
+	sink := &fakeSink{name: "fake"}
+	d := newTestDrainer(t, sink)
+	d.Config.Apps = map[string]AppPolicy{
+		"chatty": {MinSeverity: SeverityProblem},
+	}
+
+	spool(t, d, &Event{App: "chatty", Severity: SeverityProblem, Subject: "broken", Body: "detail"})
+	d.DrainOnce(context.Background())
+	if len(sink.delivered) != 1 {
+		t.Fatalf("problem must deliver, sink saw %d", len(sink.delivered))
+	}
+
+	spool(t, d, &Event{App: "chatty", Severity: SeverityInfo, Subject: "fyi"})
+	d.DrainOnce(context.Background())
+	if len(sink.delivered) != 1 {
+		t.Fatalf("info below min_severity must not deliver, sink saw %d", len(sink.delivered))
+	}
+
+	spool(t, d, &Event{App: "chatty", Severity: SeverityOK, Subject: "healthy"})
+	d.DrainOnce(context.Background())
+	if len(sink.delivered) != 2 {
+		t.Fatalf("ok after a below-min info must still recover, sink saw %d", len(sink.delivered))
+	}
+	if got := sink.delivered[1].Subject; !strings.HasPrefix(got, "RECOVERED — ") {
+		t.Errorf("subject = %q, want RECOVERED prefix", got)
+	}
+}

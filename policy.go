@@ -106,13 +106,13 @@ func Decide(e *Event, policy AppPolicy, prev *appState, now time.Time) Decision 
 	if policy.Mute {
 		return Decision{Reason: "app is muted in config"}
 	}
-	if min := policy.MinSeverity; min != "" && e.Severity.rank() < min.rank() {
-		return Decision{Reason: fmt.Sprintf("severity %s below configured minimum %s", e.Severity, min)}
-	}
 
 	// A healthy report is normally silent. It speaks up only to close out a
 	// problem previously reported: an alert you never see resolved trains you
-	// to ignore the channel.
+	// to ignore the channel. Recovery is evaluated before min_severity so a
+	// documented `min_severity: problem` cannot swallow the RECOVERED notice
+	// — ok ranks below problem, but closing an outstanding problem is not
+	// informational chatter.
 	if e.Severity == SeverityOK {
 		if prev == nil || prev.LastStatus != SeverityProblem {
 			return Decision{Reason: "healthy, and no outstanding problem to close out"}
@@ -122,6 +122,10 @@ func Decide(e *Event, policy AppPolicy, prev *appState, now time.Time) Decision 
 			Reason:  "closing out a previously reported problem",
 			Subject: "RECOVERED — " + e.Subject,
 		}
+	}
+
+	if min := policy.MinSeverity; min != "" && e.Severity.rank() < min.rank() {
+		return Decision{Reason: fmt.Sprintf("severity %s below configured minimum %s", e.Severity, min)}
 	}
 
 	// Repeat suppression. Without this, a problem that persists for a week
@@ -166,12 +170,17 @@ func (s *State) Record(e *Event, now time.Time) {
 
 // RecordSuppressed updates the status without touching the send timestamp, so
 // a suppressed event still transitions the app's health (letting a later
-// recovery fire) without extending the re-notify window.
+// recovery fire) without extending the re-notify window. A min-severity drop
+// is a filter, not a health transition: overwriting LastStatus with info
+// would clear an outstanding problem and silence the later RECOVERED notice.
 func (s *State) RecordSuppressed(e *Event) {
 	st, ok := s.Apps[e.App]
 	if !ok {
 		st = &appState{}
 		s.Apps[e.App] = st
+	}
+	if st.LastStatus != "" && e.Severity.rank() < st.LastStatus.rank() {
+		return
 	}
 	st.LastStatus = e.Severity
 }

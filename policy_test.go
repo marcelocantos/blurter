@@ -129,6 +129,18 @@ func TestDecideMinSeverityDropsInfo(t *testing.T) {
 	}
 }
 
+func TestDecideRecoveryFiresDespiteMinSeverity(t *testing.T) {
+	now := time.Now()
+	okEvent := testEvent("chatty", SeverityOK, "healthy", "")
+	d := Decide(okEvent, AppPolicy{MinSeverity: SeverityProblem}, &appState{LastStatus: SeverityProblem}, now)
+	if !d.Deliver {
+		t.Fatalf("recovery must fire despite min_severity=problem, got %+v", d)
+	}
+	if want := "RECOVERED — healthy"; d.Subject != want {
+		t.Errorf("subject = %q, want %q", d.Subject, want)
+	}
+}
+
 func TestDecideMuteSuppressesEverything(t *testing.T) {
 	d := Decide(testEvent("wip", SeverityProblem, "broken", ""),
 		AppPolicy{Mute: true, RenotifyAfter: week()}, nil, time.Now())

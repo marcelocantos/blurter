@@ -101,7 +101,7 @@ apps:
   myapp:
     renotify_after: 24h       # nag sooner about this one
   chatty-app:
-    min_severity: problem     # drop its info events
+    min_severity: problem     # drop info chatter; never suppresses recovery
   under-development:
     mute: true                # silence entirely without touching the app
 ```
