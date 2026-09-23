@@ -327,6 +327,15 @@ apps / agents
   must name the symlink, not the Cellar target.
 - **Ratchet candidate:** `--dry-run` test asserting ProgramArguments and
   PATH.
+- **Closed 2026-09-23:** `supervisor/install.sh` now installs the sole daemon
+  program, stops both launchd labels, and removes their plists. The runner uses
+  `/opt/homebrew/opt/blurter/bin/blurter`, the Supervisor log is
+  `~/.local/var/log/blurter.log`, and the release workflow no longer generates
+  a Homebrew service. On the owner Mac, the live installer returned
+  `blurter RUNNING`; `pgrep` found one `/opt/homebrew/opt/blurter/bin/blurter
+  daemon`; both launchd labels were absent; `blurter status` reported an empty
+  spool, Slack ready, and banner enabled. The macOS CI job exercises script
+  parsing, config rendering, and the binary override under Bash 3.2.
 
 ### ENT-005: Unreadable spool files are logged forever and never parked
 

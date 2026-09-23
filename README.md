@@ -33,12 +33,15 @@ same things wrong. blurter exists so that happens once, centrally:
 
 ```sh
 brew install marcelocantos/tap/blurter
-brew services start blurter
+./supervisor/install.sh
 ```
 
-The formula ships a service definition, so `brew services` manages the daemon.
-Without Homebrew, `blurter service install` generates and loads an equivalent
-launchd agent, or run `blurter daemon` under `systemd --user` on Linux.
+On macOS, the installer registers blurter with Supervisor and stops any older
+Homebrew or blurter launchd job. Supervisor runs the installed Homebrew binary,
+restarts it if it exits, and writes `~/.local/var/log/blurter.log`. Check it with
+`supervisorctl status blurter`. Install Supervisor first if it is not already
+managing your other services. On Linux, run `blurter daemon` under
+`systemd --user`.
 
 From source: `go build -o blurter .`
 
