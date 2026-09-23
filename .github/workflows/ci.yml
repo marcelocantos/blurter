@@ -31,3 +31,13 @@ jobs:
           ./blurter --version
           ./blurter --help
           ./blurter --help-agent | head -5
+      - name: Supervisor scripts (macOS Bash 3.2)
+        if: runner.os == 'macOS'
+        run: |
+          test "$(/bin/bash -c 'echo ${BASH_VERSINFO[0]}')" = 3
+          /bin/bash -n supervisor/install.sh supervisor/run-blurter.sh
+          temp_dir="$(mktemp -d)"
+          trap 'rm -rf "$temp_dir"' EXIT
+          SUPERVISOR_CONF_DIR="$temp_dir" SUPERVISOR_SKIP_CTL=1 /bin/bash supervisor/install.sh
+          test -f "$temp_dir/blurter.ini"
+          test "$(BLURTER_BIN=/usr/bin/true /bin/bash supervisor/run-blurter.sh --print-bin)" = /usr/bin/true

@@ -146,15 +146,14 @@ human.
 ## Running the daemon
 
 ```sh
-blurter service install     # generates and loads a launchd agent (from-source)
-blurter status              # paths, spool depth, sink readiness, per-app state
+supervisorctl status blurter # check the installed Supervisor service
+blurter status              # spool depth, per-app state, sink readiness
 blurter drain               # deliver what's spooled now, then exit
 ```
 
-On Linux, run `blurter daemon` under `systemd --user`; `service install` is
-launchd-only. Homebrew users should use `brew services`, not `service install`:
-the generated plist is not the formula's (different log path, PATH, and it
-records `EvalSymlinks` of the binary, which on Homebrew is a Cellar path).
+On macOS, run `./supervisor/install.sh` from the blurter checkout to install
+the daemon under Supervisor. On Linux, run `blurter daemon` under
+`systemd --user`.
 
 `blurter drain` is useful when there is no daemon, and in tests. It is not a
 substitute for the daemon: without one, spooled events wait until something

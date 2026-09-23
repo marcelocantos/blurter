@@ -44,7 +44,6 @@ Usage:
   blurter daemon [--interval DURATION]
   blurter drain            deliver everything spooled now, then exit
   blurter status           show spool depth, per-app state, and config paths
-  blurter service install  write a launchd agent for the current user
   blurter mcp              serve MCP over stdio (for agent sessions)
   blurter --version | --help | --help-agent
 
@@ -95,8 +94,6 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return cmdDrain(args[1:], stderr)
 	case "status":
 		return cmdStatus(args[1:], stdout)
-	case "service":
-		return cmdService(args[1:], stdout)
 	case "mcp":
 		return cmdMCP(args[1:], os.Stdin, stdout, stderr)
 	default:
