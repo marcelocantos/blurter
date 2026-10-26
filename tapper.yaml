@@ -1,0 +1,38 @@
+# Homebrew tap publication for blurter. `tapper push` runs from the dev
+# Mac after the GitHub release exists; the token lives in the macOS
+# keychain, so there is no Actions secret and no CI step.
+repo: marcelocantos/blurter
+tap:
+  owner: marcelocantos
+  name: homebrew-tap
+push:
+  darwin_arm64: true
+  linux_amd64: true
+  linux_arm64: true
+  skip_checksum: true
+  update_readme_table: true
+install: 'bin.install "blurter" => "blurter"'
+test: 'system bin/"blurter", "--version"'
+# The service block must live here, not be hand-added to the tap:
+# homebrew-releaser regenerates the formula on every release, so an
+# edit made directly in the tap would be silently clobbered.
+#
+# terminal-notifier is macOS-only and gives the desktop notification
+# a working click action; without it the banner sink falls back to
+# osascript, whose notification has no click handler.
+formula_includes: |
+  on_macos do
+    depends_on "terminal-notifier"
+  end
+
+  service do
+    run [opt_bin/"blurter", "daemon"]
+    keep_alive true
+    log_path var/"log/blurter.log"
+    error_log_path var/"log/blurter.log"
+    working_dir HOMEBREW_PREFIX
+    environment_variables PATH: "#{HOMEBREW_PREFIX}/bin:#{HOMEBREW_PREFIX}/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
+  end
+token:
+  env: HOMEBREW_TAP_TOKEN
+  op: op://Personal/GitHub Homebrew Tap PAT/token
