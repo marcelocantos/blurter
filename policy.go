@@ -26,6 +26,9 @@ type appState struct {
 // audit trail lives separately in append-only form.
 type State struct {
 	Apps map[string]*appState `json:"apps"`
+	// Keys keeps independent conditions within an app from replacing one
+	// another's dedup or recovery state. Apps retains unkeyed legacy clients.
+	Keys map[string]map[string]*appState `json:"keys,omitempty"`
 
 	path string
 }
@@ -49,6 +52,7 @@ func LoadState(dir string) (*State, error) {
 		// Corrupt state is recoverable; say so and carry on.
 		fmt.Fprintf(os.Stderr, "blurter: state file %s unreadable (%v); starting from empty state\n", s.path, err)
 		s.Apps = map[string]*appState{}
+		s.Keys = nil
 		return s, nil
 	}
 	if s.Apps == nil {
@@ -154,11 +158,7 @@ func Decide(e *Event, policy AppPolicy, prev *appState, now time.Time) Decision 
 // success, so a network outage cannot mark an undelivered alert as sent — the
 // bug that made ytt's own notifier drop alerts raised while offline.
 func (s *State) Record(e *Event, now time.Time) {
-	st, ok := s.Apps[e.App]
-	if !ok {
-		st = &appState{}
-		s.Apps[e.App] = st
-	}
+	st := s.eventState(e)
 	st.LastStatus = e.Severity
 	st.LastDigest = e.Digest()
 	st.LastSentAt = now
@@ -168,12 +168,52 @@ func (s *State) Record(e *Event, now time.Time) {
 // a suppressed event still transitions the app's health (letting a later
 // recovery fire) without extending the re-notify window.
 func (s *State) RecordSuppressed(e *Event) {
-	st, ok := s.Apps[e.App]
-	if !ok {
-		st = &appState{}
-		s.Apps[e.App] = st
-	}
+	st := s.eventState(e)
 	st.LastStatus = e.Severity
+}
+
+// ForEvent returns the state of the condition the event reports. Severity
+// belongs in the digest, but not the scope: ok must recover its own problem.
+func (s *State) ForEvent(e *Event) *appState {
+	if e.Key == "" {
+		return s.Apps[e.App]
+	}
+	if st := s.Keys[e.App][e.Key]; st != nil {
+		return st
+	}
+	// An older daemon stored only the last event per app. Its digest still
+	// identifies the key; use the saved severity so a recovery arriving first
+	// after upgrade can recognize its previously reported problem.
+	if st := s.Apps[e.App]; st != nil {
+		previous := *e
+		previous.Severity = st.LastStatus
+		if st.LastDigest == previous.Digest() {
+			return st
+		}
+	}
+	return nil
+}
+
+func (s *State) eventState(e *Event) *appState {
+	states := s.Apps
+	key := e.App
+	if e.Key != "" {
+		if s.Keys == nil {
+			s.Keys = make(map[string]map[string]*appState)
+		}
+		if s.Keys[e.App] == nil {
+			s.Keys[e.App] = make(map[string]*appState)
+		}
+		states, key = s.Keys[e.App], e.Key
+	}
+	if states[key] == nil {
+		st := &appState{}
+		if previous := s.ForEvent(e); previous != nil {
+			*st = *previous
+		}
+		states[key] = st
+	}
+	return states[key]
 }
 
 // Get returns the remembered state for an app, or nil.

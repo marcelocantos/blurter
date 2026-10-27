@@ -59,6 +59,12 @@ config is `min_severity: problem` cannot produce one either.
 
 ### `--key`
 
+Each key is an independent condition within an app, with its own repeat
+window and recovery state. Use the same key for the condition's `problem`
+and `ok` events; do not include severity in the key. A download recovery
+must not close an unrelated analyze failure. Clients without a key retain
+the original app-wide state.
+
 Dedup normally hashes subject + body, so a *changed* problem alerts again. When
 the text varies but the underlying problem does not — an embedded retry count,
 a timestamp, a fluctuating item count — pass a stable `--key` so repeats are

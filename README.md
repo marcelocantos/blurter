@@ -29,6 +29,11 @@ same things wrong. blurter exists so that happens once, centrally:
 - **One policy, implemented once.** Dedup, re-notify windows, recovery notices,
   per-app severity thresholds and muting.
 
+Independent conditions within an app use separate `--key` values. Each
+retains its own deduplication and recovery state across daemon restarts;
+send `problem` and `ok` with the same key. Unkeyed clients retain app-wide
+behavior, and existing state files load without losing other apps' state.
+
 ## Install
 
 ```sh

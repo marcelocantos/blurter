@@ -323,7 +323,7 @@ func (s *mcpServer) toolStatus() (map[string]any, error) {
 		// being written and never delivered.
 		fmt.Fprintf(&b, "parked: %d undeliverable event(s) — check configuration\n", len(parked))
 	}
-	if len(state.Apps) == 0 {
+	if len(state.Apps) == 0 && len(state.Keys) == 0 {
 		fmt.Fprintf(&b, "\nno app state yet\n")
 	} else {
 		fmt.Fprintf(&b, "\napps:\n")
@@ -332,7 +332,12 @@ func (s *mcpServer) toolStatus() (map[string]any, error) {
 			if !st.LastSentAt.IsZero() {
 				last = st.LastSentAt.UTC().Format(time.RFC3339)
 			}
-			fmt.Fprintf(&b, "  %s: status=%s last_sent=%s\n", app, st.LastStatus, last)
+			fmt.Fprintf(&b, "  %s (unkeyed/legacy): status=%s last_sent=%s\n", app, st.LastStatus, last)
+		}
+		for app, keys := range state.Keys {
+			for key, st := range keys {
+				fmt.Fprintf(&b, "  %s/%s: status=%s last_sent=%s\n", app, key, st.LastStatus, st.LastSentAt.UTC().Format(time.RFC3339))
+			}
 		}
 	}
 	return toolText(b.String()), nil

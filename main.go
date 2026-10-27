@@ -54,8 +54,8 @@ Severity is one of problem, ok, info.
     --severity LEVEL    problem | ok | info (required)
     --subject TEXT      one-line summary (required)
     --body TEXT         detail; "-" reads stdin
-    --key TEXT          dedup key override, when the text varies but the
-                        underlying problem does not
+    --key TEXT          independent condition within the app; use the same
+                        key for its problem and recovery reports
     --link PATH|URL     what the notification's click action opens
 
 Exit status is 0 when the event was spooled, not when it was delivered:
@@ -253,7 +253,7 @@ func cmdStatus(args []string, stdout io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "banner: %v\n", cfg.Banner.enabled())
 
-	if len(state.Apps) == 0 {
+	if len(state.Apps) == 0 && len(state.Keys) == 0 {
 		fmt.Fprintf(stdout, "\nno app state yet\n")
 		return nil
 	}
@@ -263,7 +263,12 @@ func cmdStatus(args []string, stdout io.Writer) error {
 		if !st.LastSentAt.IsZero() {
 			last = st.LastSentAt.UTC().Format(time.RFC3339)
 		}
-		fmt.Fprintf(stdout, "  %-16s status=%-8s last_sent=%s\n", app, st.LastStatus, last)
+		fmt.Fprintf(stdout, "  %-16s (unkeyed/legacy) status=%-8s last_sent=%s\n", app, st.LastStatus, last)
+	}
+	for app, keys := range state.Keys {
+		for key, st := range keys {
+			fmt.Fprintf(stdout, "  %s/%s status=%s last_sent=%s\n", app, key, st.LastStatus, st.LastSentAt.UTC().Format(time.RFC3339))
+		}
 	}
 	return nil
 }
