@@ -97,7 +97,7 @@ func (d *Drainer) DrainOnce(ctx context.Context) (delivered, deferred int) {
 		}
 
 		policy := d.Config.PolicyFor(e.App)
-		decision := Decide(e, policy, d.State.Get(e.App), d.now())
+		decision := Decide(e, policy, d.State.ForEvent(e), d.now())
 		if !decision.Deliver {
 			d.logf("suppressed %s/%s: %s", e.App, e.Severity, decision.Reason)
 			d.State.RecordSuppressed(e)
@@ -217,6 +217,7 @@ func (d *Drainer) audit(e *Event, decision Decision, outcome string, sinkErrs []
 		"at":       d.now().UTC().Format(time.RFC3339),
 		"id":       e.ID,
 		"app":      e.App,
+		"key":      e.Key,
 		"severity": e.Severity,
 		"subject":  e.Subject,
 		"outcome":  outcome,

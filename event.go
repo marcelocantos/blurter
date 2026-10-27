@@ -69,8 +69,9 @@ type Event struct {
 	Body      string    `json:"body,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 
-	// Key overrides the computed dedup digest. Apps set this when the
-	// human-readable text varies but the underlying problem is the same
+	// Key identifies an independent condition within the app and overrides
+	// the computed dedup digest. Use the same key for problem and recovery.
+	// Apps set this when the human-readable text varies but the problem is the same
 	// (e.g. a message embedding a changing retry count).
 	Key string `json:"key,omitempty"`
 
