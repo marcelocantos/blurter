@@ -67,7 +67,7 @@ jobs:
           # homebrew-releaser strips the leading v from the tag when looking
           # for assets, so the asset name must carry the bare version.
           name="blurter-${version}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
-          tar czf "$name" blurter README.md LICENSE agents-guide.md
+          tar czf "$name" blurter README.md LICENSE NOTICE agents-guide.md
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
       - name: Upload to release
